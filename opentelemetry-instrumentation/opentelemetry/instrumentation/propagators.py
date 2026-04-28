@@ -28,8 +28,14 @@ class DictHeaderSetter:
     """Setter for dict headers."""
 
     def set(self, carrier: Dict, key: str, value: str) -> None:
-        """Set a header value."""
-        raise NotImplementedError
+        """Set a header value.
+
+        If the key already exists, append the value with ", ".
+        """
+        if key in carrier:
+            carrier[key] = carrier[key] + ", " + value
+        else:
+            carrier[key] = value
 
 
 class TraceResponsePropagator:
@@ -40,15 +46,32 @@ class TraceResponsePropagator:
         carrier: Dict,
         context: Optional[Context] = None,
     ) -> None:
-        """Inject trace context into response headers."""
-        raise NotImplementedError
+        """Inject trace context into response headers.
+
+        Injects the traceresponse header in W3C Trace Context format.
+        """
+        setter = DictHeaderSetter()
+        span = get_current_span(context)
+        span_context = span.get_span_context()
+
+        # Format trace ID and span ID as hex strings with proper padding
+        trace_id = format(span_context.trace_id, "032x")
+        span_id = format(span_context.span_id, "016x")
+        trace_flags = format(span_context.trace_flags, "02x")
+
+        # W3C Trace Context format: version-traceid-spanid-flags
+        traceresponse = f"00-{trace_id}-{span_id}-{trace_flags}"
+
+        setter.set(carrier, "traceresponse", traceresponse)
+        setter.set(carrier, "Access-Control-Expose-Headers", "traceresponse")
 
 
 def get_global_response_propagator():
     """Get the global response propagator."""
-    raise NotImplementedError
+    return _RESPONSE_PROPAGATOR
 
 
 def set_global_response_propagator(propagator):
     """Set the global response propagator."""
-    raise NotImplementedError
+    global _RESPONSE_PROPAGATOR
+    _RESPONSE_PROPAGATOR = propagator
