@@ -16,16 +16,33 @@
 
 import os
 
+from opentelemetry.environment_variables import (
+    OTEL_METRICS_EXPORTER,
+    OTEL_TRACES_EXPORTER,
+)
 from opentelemetry.instrumentation.distro import BaseDistro
+from opentelemetry.sdk.environment_variables import OTEL_EXPORTER_OTLP_PROTOCOL
 
 
 class OpenTelemetryDistro(BaseDistro):
-    """OpenTelemetry distribution."""
+    """OpenTelemetry distribution.
+
+    Configures OpenTelemetry with default settings for OTLP export
+    over gRPC protocol.
+    """
 
     def _configure(self, **kwargs):
-        """Configure the distribution."""
-        pass
+        """Configure the distribution.
 
-    def configure(self, **kwargs):
-        """Configure the distribution."""
-        raise NotImplementedError
+        Sets default environment variables for traces and metrics export
+        using OTLP over gRPC.
+        """
+        # Set default exporter to OTLP if not already set
+        if OTEL_TRACES_EXPORTER not in os.environ:
+            os.environ[OTEL_TRACES_EXPORTER] = "otlp"
+
+        if OTEL_METRICS_EXPORTER not in os.environ:
+            os.environ[OTEL_METRICS_EXPORTER] = "otlp"
+
+        if OTEL_EXPORTER_OTLP_PROTOCOL not in os.environ:
+            os.environ[OTEL_EXPORTER_OTLP_PROTOCOL] = "grpc"
