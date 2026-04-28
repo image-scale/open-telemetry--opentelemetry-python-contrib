@@ -16,7 +16,8 @@
 
 from opentelemetry.propagators.aws.aws_xray_propagator import (
     TRACE_HEADER_KEY,
+    AwsXRayLambdaPropagator,
     AwsXRayPropagator,
 )
 
-__all__ = ["AwsXRayPropagator", "TRACE_HEADER_KEY"]
+__all__ = ["AwsXRayLambdaPropagator", "AwsXRayPropagator", "TRACE_HEADER_KEY"]
