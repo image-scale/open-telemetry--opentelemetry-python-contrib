@@ -55,12 +55,53 @@ class BaseInstrumentor(ABC):
 
     def _check_dependency_conflicts(self) -> Optional[DependencyConflict]:
         """Check for dependency conflicts."""
-        raise NotImplementedError
+        return get_dependency_conflicts(self.instrumentation_dependencies())
 
     def instrument(self, **kwargs):
-        """Instrument the library."""
-        raise NotImplementedError
+        """Instrument the library.
+
+        Args:
+            **kwargs: Additional arguments passed to _instrument().
+                raise_exception_on_conflict: If True, raise DependencyConflictError
+                    when there are dependency conflicts. Default is True.
+
+        Returns:
+            The result of _instrument() if successful, None otherwise.
+
+        Raises:
+            DependencyConflictError: If raise_exception_on_conflict is True and
+                there are dependency conflicts.
+        """
+        if self._is_instrumented_by_opentelemetry:
+            _LOG.warning("Attempting to instrument while already instrumented")
+            return None
+
+        # Check for skip_dep_check flag (used in auto instrumentation)
+        skip_dep_check = kwargs.pop("skip_dep_check", False)
+        raise_exception_on_conflict = kwargs.pop("raise_exception_on_conflict", True)
+
+        if not skip_dep_check:
+            conflict = self._check_dependency_conflicts()
+            if conflict is not None:
+                if raise_exception_on_conflict:
+                    raise DependencyConflictError(str(conflict))
+                _LOG.error(conflict)
+                return None
+
+        result = self._instrument(**kwargs)
+        self._is_instrumented_by_opentelemetry = True
+        return result
 
     def uninstrument(self, **kwargs):
-        """Uninstrument the library."""
-        raise NotImplementedError
+        """Uninstrument the library.
+
+        Returns:
+            The result of _uninstrument() if successful, None otherwise.
+        """
+        if not self._is_instrumented_by_opentelemetry:
+            _LOG.warning("Attempting to uninstrument while not instrumented")
+            return None
+
+        result = self._uninstrument(**kwargs)
+        self._is_instrumented_by_opentelemetry = False
+        return result
