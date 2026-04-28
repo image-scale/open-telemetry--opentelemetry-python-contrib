@@ -15,32 +15,71 @@
 """Baggage Span Processor."""
 
 import re
-from typing import Callable, Pattern, Union
+from typing import Callable, Optional, Pattern, Union
 
-from opentelemetry.sdk.trace import SpanProcessor
+from opentelemetry.baggage import get_all as get_all_baggage
+from opentelemetry.context import Context
+from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
 
 
 ALLOW_ALL_BAGGAGE_KEYS = re.compile(".*")
 
 
 class BaggageSpanProcessor(SpanProcessor):
-    """Baggage span processor."""
+    """Baggage span processor.
+
+    Copies baggage entries to span attributes on span start,
+    filtered by a predicate function or regex pattern.
+    """
 
     def __init__(
         self,
         baggage_key_predicate: Union[Callable[[str], bool], Pattern],
     ):
+        """Initialize the BaggageSpanProcessor.
+
+        Args:
+            baggage_key_predicate: Either a callable that takes a baggage key
+                and returns True if it should be added to span attributes,
+                or a regex Pattern that matches keys to include.
+        """
         self._baggage_key_predicate = baggage_key_predicate
-        raise NotImplementedError
 
-    def on_start(self, span, parent_context=None):
-        raise NotImplementedError
+    def _matches_predicate(self, key: str) -> bool:
+        """Check if a baggage key matches the predicate."""
+        if callable(self._baggage_key_predicate) and not isinstance(
+            self._baggage_key_predicate, Pattern
+        ):
+            return self._baggage_key_predicate(key)
+        # It's a Pattern
+        return self._baggage_key_predicate.match(key) is not None
 
-    def on_end(self, span):
+    def on_start(
+        self, span: Span, parent_context: Optional[Context] = None
+    ) -> None:
+        """Copy matching baggage entries to span attributes.
+
+        Args:
+            span: The span being started.
+            parent_context: The parent context.
+        """
+        baggage = get_all_baggage(parent_context)
+        for key, value in baggage.items():
+            if self._matches_predicate(key):
+                span.set_attribute(key, value)
+
+    def on_end(self, span: ReadableSpan) -> None:
+        """Called when a span ends. No-op for this processor."""
         pass
 
-    def shutdown(self):
+    def shutdown(self) -> None:
+        """Shut down the processor. No-op for this processor."""
         pass
 
-    def force_flush(self, timeout_millis=None):
+    def force_flush(self, timeout_millis: Optional[int] = None) -> bool:
+        """Force flush. No-op for this processor.
+
+        Returns:
+            True always.
+        """
         return True
