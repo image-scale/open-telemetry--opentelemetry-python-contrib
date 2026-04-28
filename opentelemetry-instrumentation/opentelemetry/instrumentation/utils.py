@@ -130,8 +130,12 @@ def suppress_instrumentation():
     """Context manager to suppress instrumentation.
 
     While in this context, all instrumentation is suppressed.
+    Sets both the UUID-based key and the simple string key for compatibility.
     """
-    token = attach(set_value(_SUPPRESS_INSTRUMENTATION_KEY, True))
+    # Set both keys for backward compatibility
+    ctx = set_value(_SUPPRESS_INSTRUMENTATION_KEY, True)
+    ctx = set_value("suppress_instrumentation", True, ctx)
+    token = attach(ctx)
     try:
         yield
     finally:
