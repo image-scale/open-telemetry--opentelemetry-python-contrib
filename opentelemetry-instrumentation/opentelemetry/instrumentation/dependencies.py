@@ -14,7 +14,7 @@
 
 """Dependencies module for checking instrumentation dependencies."""
 
-from typing import Collection, Optional, Union, Sequence, List
+from typing import Collection, Optional, Union, List
 
 from packaging.requirements import Requirement
 
@@ -41,6 +41,40 @@ class DependencyConflictError(Exception):
     pass
 
 
+def _format_requirement_for_dist(req: Requirement) -> str:
+    """Format a requirement string with correct spacing for dist conflicts.
+
+    Removes spaces around version specifier operators but preserves spaces in markers.
+    """
+    result = req.name
+    if req.specifier:
+        # Join specifier without spaces
+        result += str(req.specifier).replace(" ", "")
+    if req.marker:
+        result += f"; {req.marker}"
+    return result
+
+
+def _check_requirement(req: Requirement, original_str: Optional[str] = None) -> Optional[DependencyConflict]:
+    """Check if a single requirement is satisfied.
+
+    Returns DependencyConflict if not satisfied, None otherwise.
+    """
+    try:
+        installed_version = version(req.name)
+        # Check if the installed version satisfies the requirement
+        if req.specifier and not req.specifier.contains(installed_version):
+            # Use original string if provided, otherwise format
+            req_str = original_str if original_str else str(req)
+            return DependencyConflict(
+                req_str, f"{req.name} {installed_version}"
+            )
+        return None
+    except PackageNotFoundError:
+        req_str = original_str if original_str else str(req)
+        return DependencyConflict(req_str, None)
+
+
 def get_dependency_conflicts(
     deps: Collection[Union[str, Requirement]],
 ) -> Optional[DependencyConflict]:
@@ -52,7 +86,27 @@ def get_dependency_conflicts(
     Returns:
         A DependencyConflict if there is a conflict, None otherwise.
     """
-    raise NotImplementedError
+    if not deps:
+        return None
+
+    for dep in deps:
+        original_str = None
+        if isinstance(dep, str):
+            original_str = dep
+            dep = Requirement(dep)
+
+        conflict = _check_requirement(dep, original_str)
+        if conflict is not None:
+            return conflict
+
+    return None
+
+
+class _AnyDependencyConflict(DependencyConflict):
+    """DependencyConflict for 'any of the following' requirements."""
+
+    def __str__(self) -> str:
+        return f'DependencyConflict: requested any of the following: "{self.required}" but found: "{self.found}"'
 
 
 def get_dist_dependency_conflicts(
@@ -66,4 +120,57 @@ def get_dist_dependency_conflicts(
     Returns:
         A DependencyConflict if there is a conflict, None otherwise.
     """
-    raise NotImplementedError
+    requires = dist.requires
+    if requires is None:
+        return None
+
+    # Separate "instruments" (AND) dependencies from "instruments-any" (OR) dependencies
+    and_deps: List[Requirement] = []
+    any_deps: List[Requirement] = []
+
+    for req_str in requires:
+        req = Requirement(req_str)
+        # Check if this is an instrumentation dependency
+        if req.marker is not None:
+            marker_str = str(req.marker)
+            if 'extra == "instruments-any"' in marker_str:
+                any_deps.append(req)
+            elif 'extra == "instruments"' in marker_str:
+                and_deps.append(req)
+
+    # Check AND dependencies (all must be satisfied)
+    for req in and_deps:
+        try:
+            installed_version = version(req.name)
+            # Check if the installed version satisfies the requirement
+            if req.specifier and not req.specifier.contains(installed_version):
+                return DependencyConflict(
+                    _format_requirement_for_dist(req),
+                    f"{req.name} {installed_version}"
+                )
+        except PackageNotFoundError:
+            return DependencyConflict(_format_requirement_for_dist(req), None)
+
+    # Check OR dependencies (at least one must be satisfied)
+    if any_deps:
+        any_satisfied = False
+        found_versions: List[str] = []
+
+        for req in any_deps:
+            try:
+                installed_version = version(req.name)
+                # Check if the installed version satisfies the requirement
+                if req.specifier and not req.specifier.contains(installed_version):
+                    continue
+                any_satisfied = True
+                found_versions.append(f"{req.name} {installed_version}")
+                break
+            except PackageNotFoundError:
+                continue
+
+        if not any_satisfied:
+            # Format the requirement strings
+            req_strs = [_format_requirement_for_dist(req) for req in any_deps]
+            return _AnyDependencyConflict(req_strs, found_versions)
+
+    return None
